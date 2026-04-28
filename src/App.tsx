@@ -1,4 +1,4 @@
-import React, { useMemo, useCallback } from 'react';
+import { useMemo, useCallback } from 'react';
 import PriceSearchUI from './presentation/price-search/PriceSearchUI';
 import { SearchUseCase } from './application/price-search/SearchUseCase';
 import { BrowserWindowOpener } from './infrastructure/price-search/BrowserWindowOpener';

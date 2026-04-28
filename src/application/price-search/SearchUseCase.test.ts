@@ -1,10 +1,10 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, type Mock } from 'vitest';
 import { SearchUseCase } from './SearchUseCase';
-import { IWindowOpener } from './IWindowOpener';
+import type { IWindowOpener } from './IWindowOpener';
 import { generateSearchUrls } from '../../domain/price-search/UrlGenerator';
 
-function createMockOpener(): IWindowOpener & { open: ReturnType<typeof vi.fn> } {
-  return { open: vi.fn() };
+function createMockOpener(): IWindowOpener & { open: Mock } {
+  return { open: vi.fn() as any };
 }
 
 describe('SearchUseCase', () => {

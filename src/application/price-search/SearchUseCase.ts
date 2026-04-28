@@ -9,7 +9,11 @@ export interface SearchResult {
 }
 
 export class SearchUseCase {
-  constructor(private readonly windowOpener: IWindowOpener) {}
+  private readonly windowOpener: IWindowOpener;
+
+  constructor(windowOpener: IWindowOpener) {
+    this.windowOpener = windowOpener;
+  }
 
   /**
    * MPN을 받아 각 유통사의 검색 결과 페이지를 새 탭으로 엽니다.
