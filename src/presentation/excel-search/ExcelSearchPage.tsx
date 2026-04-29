@@ -38,10 +38,15 @@ export default function ExcelSearchPage({ onSearch }: Props) {
 
   const handleFileSelected = useCallback(
     async (file: File) => {
+      console.log('[ExcelSearchPage] handleFileSelected 호출:', file.name);
       setError(null);
       setIsLoading(true);
       try {
         const parsed = await useCase.parseFile(file);
+        console.log('[ExcelSearchPage] 파싱 성공:', {
+          rowCount: parsed.rawRows.length,
+          columnCount: parsed.columnCount,
+        });
         setSheet(parsed);
 
         // 자동 감지 시도
@@ -60,7 +65,9 @@ export default function ExcelSearchPage({ onSearch }: Props) {
         setMapping({ mpnColumnIndex: 0, quantityColumnIndex: null });
         setStep('columns');
       } catch (err) {
-        setError(err instanceof Error ? err.message : '파일 파싱 중 오류가 발생했습니다.');
+        console.error('[ExcelSearchPage] 파싱 실패:', err);
+        const message = err instanceof Error ? err.message : '파일 파싱 중 오류가 발생했습니다.';
+        setError(`${message}\n\n(F12 → 콘솔에서 자세한 로그를 확인하세요)`);
       } finally {
         setIsLoading(false);
       }

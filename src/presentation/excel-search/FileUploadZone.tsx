@@ -5,11 +5,6 @@ interface Props {
 }
 
 const ACCEPTED_EXTENSIONS = '.xlsx,.xls,.csv';
-const ACCEPTED_TYPES = [
-  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-  'application/vnd.ms-excel',
-  'text/csv',
-];
 
 export default function FileUploadZone({ onFileSelected }: Props) {
   const [isDragging, setIsDragging] = useState(false);
@@ -18,6 +13,7 @@ export default function FileUploadZone({ onFileSelected }: Props) {
 
   const handleFile = useCallback(
     (file: File) => {
+      console.log('[FileUploadZone] 파일 선택됨:', file.name, file.size, 'bytes', file.type);
       setFileName(file.name);
       onFileSelected(file);
     },
@@ -27,6 +23,7 @@ export default function FileUploadZone({ onFileSelected }: Props) {
   const handleDrop = useCallback(
     (e: React.DragEvent) => {
       e.preventDefault();
+      e.stopPropagation();
       setIsDragging(false);
       const file = e.dataTransfer.files[0];
       if (file) handleFile(file);
@@ -36,22 +33,32 @@ export default function FileUploadZone({ onFileSelected }: Props) {
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
+    e.stopPropagation();
     setIsDragging(true);
   }, []);
 
-  const handleDragLeave = useCallback(() => {
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
     setIsDragging(false);
   }, []);
 
   const handleInputChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
-      if (file) handleFile(file);
+      if (file) {
+        handleFile(file);
+      }
+      // input 초기화 (같은 파일 재선택 가능하도록)
+      if (inputRef.current) {
+        inputRef.current.value = '';
+      }
     },
     [handleFile]
   );
 
-  const handleClick = useCallback(() => {
+  const handleClick = useCallback((e: React.MouseEvent) => {
+    // input 자체 클릭인 경우 무시 (이벤트 버블링 방지)
+    if ((e.target as HTMLElement).tagName === 'INPUT') return;
     inputRef.current?.click();
   }, []);
 
@@ -73,6 +80,7 @@ export default function FileUploadZone({ onFileSelected }: Props) {
         onChange={handleInputChange}
         className="upload-zone__input"
         data-testid="file-input"
+        onClick={(e) => e.stopPropagation()}
       />
 
       {fileName ? (
@@ -88,13 +96,11 @@ export default function FileUploadZone({ onFileSelected }: Props) {
             파일을 여기에 드래그하거나 <strong>클릭</strong>하세요
           </p>
           <p className="upload-zone__formats">
-            {ACCEPTED_TYPES.length > 0 && (
-              <span className="upload-zone__badge-group">
-                <span className="format-badge">.xlsx</span>
-                <span className="format-badge">.xls</span>
-                <span className="format-badge">.csv</span>
-              </span>
-            )}
+            <span className="upload-zone__badge-group">
+              <span className="format-badge">.xlsx</span>
+              <span className="format-badge">.xls</span>
+              <span className="format-badge">.csv</span>
+            </span>
           </p>
         </div>
       )}
