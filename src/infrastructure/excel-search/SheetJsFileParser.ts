@@ -1,12 +1,13 @@
-import ExcelJS from 'exceljs';
+import readXlsxFile from 'read-excel-file';
 import type { IFileParser, ParsedSheet } from '../../application/excel-search/IFileParser';
 
 /**
- * ExcelJS 라이브러리를 사용한 파일 파서 구현체.
+ * read-excel-file 라이브러리를 사용한 파일 파서 구현체.
  * .xlsx, .csv 파일을 지원합니다.
  *
- * SheetJS Community Edition의 시트 데이터 누락 문제를 해결하기 위해
- * 완전한 오픈소스 라이브러리인 ExcelJS로 교체했습니다.
+ * ExcelJS의 "Cannot read properties of undefined (reading 'company')" 에러
+ * (한컴, 구글 시트 등 비표준 앱 생성 엑셀 파일 메타데이터 누락 문제)를 피하기 위해
+ * 브라우저 환경에서 가장 안정적이고 가벼운 read-excel-file 라이브러리를 사용합니다.
  */
 export class SheetJsFileParser implements IFileParser {
   async parse(file: File): Promise<ParsedSheet> {
@@ -26,57 +27,40 @@ export class SheetJsFileParser implements IFileParser {
       return this.parseCsv(file);
     }
 
-    // xlsx (xls는 ExcelJS가 지원하지 않으므로 xlsx로 시도)
     return this.parseXlsx(file);
   }
 
   private async parseXlsx(file: File): Promise<ParsedSheet> {
-    const buffer = await file.arrayBuffer();
-    console.log('[FileParser] ArrayBuffer 크기:', buffer.byteLength);
+    console.log('[FileParser] read-excel-file 파싱 시도...');
 
-    const workbook = new ExcelJS.Workbook();
-
+    let rawRows: any[][];
     try {
-      await workbook.xlsx.load(buffer);
+      rawRows = await readXlsxFile(file);
     } catch (err) {
-      console.error('[FileParser] xlsx.load 실패:', err);
+      console.error('[FileParser] readXlsxFile 실패:', err);
       throw new Error(
         `엑셀 파일을 읽을 수 없습니다: ${err instanceof Error ? err.message : String(err)}`
       );
     }
 
-    console.log('[FileParser] 시트 수:', workbook.worksheets.length);
-
-    const worksheet = workbook.worksheets[0];
-    if (!worksheet) {
-      throw new Error('파일에 시트가 없습니다.');
-    }
-
-    console.log('[FileParser] 시트 이름:', worksheet.name, '행 수:', worksheet.rowCount);
-
-    const rawRows: string[][] = [];
-    let maxColumns = 0;
-
-    worksheet.eachRow({ includeEmpty: true }, (row) => {
-      const values: string[] = [];
-      // ExcelJS 행은 1-indexed이고, row.values[0]은 항상 undefined
-      const rowValues = row.values as (string | number | boolean | Date | null | undefined)[];
-      for (let i = 1; i < rowValues.length; i++) {
-        const cell = rowValues[i];
-        values.push(this.cellToString(cell));
-      }
-      rawRows.push(values);
-      if (values.length > maxColumns) {
-        maxColumns = values.length;
-      }
-    });
-
-    if (rawRows.length === 0) {
+    if (!rawRows || rawRows.length === 0) {
       throw new Error('파일에 데이터가 없습니다.');
     }
 
+    // 각 셀의 값을 문자열로 변환 (null/undefined는 빈 문자열로)
+    const stringRows = rawRows.map((row) =>
+      row.map((cell) => {
+        if (cell === null || cell === undefined) return '';
+        if (cell instanceof Date) return cell.toLocaleDateString('ko-KR');
+        return String(cell);
+      })
+    );
+
+    // 가장 긴 행을 기준으로 열 수 결정
+    const maxColumns = Math.max(...stringRows.map((row) => row.length), 0);
+
     // 모든 행을 같은 열 수로 정규화
-    const normalizedRows = rawRows.map((row) => {
+    const normalizedRows = stringRows.map((row) => {
       if (row.length < maxColumns) {
         return [...row, ...Array<string>(maxColumns - row.length).fill('')];
       }
@@ -149,24 +133,5 @@ export class SheetJsFileParser implements IFileParser {
     }
     result.push(current.trim());
     return result;
-  }
-
-  private cellToString(cell: unknown): string {
-    if (cell === null || cell === undefined) return '';
-    if (cell instanceof Date) {
-      return cell.toLocaleDateString('ko-KR');
-    }
-    if (typeof cell === 'object' && cell !== null) {
-      // ExcelJS rich text 등
-      const richText = (cell as { richText?: { text: string }[] }).richText;
-      if (richText) {
-        return richText.map((r) => r.text).join('');
-      }
-      // formula result
-      const result = (cell as { result?: unknown }).result;
-      if (result !== undefined) return String(result);
-      return String(cell);
-    }
-    return String(cell);
   }
 }
