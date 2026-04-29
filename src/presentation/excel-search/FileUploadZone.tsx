@@ -4,7 +4,7 @@ interface Props {
   onFileSelected: (file: File) => void;
 }
 
-const ACCEPTED_EXTENSIONS = '.xlsx,.xls,.csv';
+const ACCEPTED_EXTENSIONS = '.xlsx,.csv';
 
 export default function FileUploadZone({ onFileSelected }: Props) {
   const [isDragging, setIsDragging] = useState(false);
@@ -98,7 +98,6 @@ export default function FileUploadZone({ onFileSelected }: Props) {
           <p className="upload-zone__formats">
             <span className="upload-zone__badge-group">
               <span className="format-badge">.xlsx</span>
-              <span className="format-badge">.xls</span>
               <span className="format-badge">.csv</span>
             </span>
           </p>
