@@ -20,16 +20,12 @@ export class SheetJsFileParser implements IFileParser {
       return this.parseCsv(file);
     }
 
-    // 1단계: SheetJS ArrayBuffer 파싱 시도
     let parsed = await this.tryParseWithSheetJS(file, 'array');
     if (parsed) return parsed;
 
-    // 2단계: SheetJS Text 파싱 시도 (HTML/XML 위장 엑셀 대응)
     parsed = await this.tryParseWithSheetJS(file, 'string');
     if (parsed) return parsed;
 
-    // 3단계: 궁극의 폴백 - JSZip을 이용한 Raw XML 직접 파싱
-    // (SheetJS, ExcelJS 모두 뻗어버리는 비표준/손상된 한국형 ERP 엑셀 파일 대응)
     console.log('[FileParser] 라이브러리 파싱 실패. Raw ZIP/XML 직접 파싱을 시도합니다...');
     try {
       parsed = await this.parseRawXlsxWithZip(file);
@@ -61,24 +57,39 @@ export class SheetJsFileParser implements IFileParser {
     }
   }
 
-  /**
-   * JSZip과 DOMParser를 사용하여 엑셀 파일의 핵심 데이터만 무식하고 안전하게 뽑아냅니다.
-   * 메타데이터나 스타일 누락으로 인해 라이브러리들이 뻗는 문제를 완벽하게 회피합니다.
-   */
+  private getElementsByLocalName(element: Element | Document, localName: string): Element[] {
+    const result: Element[] = [];
+    const all = element.getElementsByTagName('*');
+    for (let i = 0; i < all.length; i++) {
+      const node = all[i];
+      // node.localName은 네임스페이스 접두사를 제외한 태그 이름 ('x:row' -> 'row')
+      // fallback으로 node.nodeName이나 tagName을 사용
+      const name = (node.localName || node.tagName).toLowerCase();
+      // 'x:row' 같은 경우 분리
+      const cleanName = name.includes(':') ? name.split(':')[1] : name;
+      if (cleanName === localName.toLowerCase()) {
+        result.push(node);
+      }
+    }
+    return result;
+  }
+
   private async parseRawXlsxWithZip(file: File): Promise<ParsedSheet | null> {
     const buffer = await file.arrayBuffer();
     const zip = await JSZip.loadAsync(buffer);
 
-    // 1. sharedStrings.xml 파싱
     const sharedStrings: string[] = [];
-    const ssFile = zip.file('xl/sharedStrings.xml');
+    
+    // sharedStrings 파일 찾기 (대소문자/경로 유연하게)
+    const filesArray = Object.values(zip.files);
+    const ssFile = filesArray.find(f => f.name.toLowerCase().includes('sharedstrings.xml'));
+    
     if (ssFile) {
       const ssXml = await ssFile.async('text');
       const doc = new DOMParser().parseFromString(ssXml, 'application/xml');
-      const siNodes = doc.getElementsByTagName('si');
+      const siNodes = this.getElementsByLocalName(doc, 'si');
       for (let i = 0; i < siNodes.length; i++) {
-        // 여러 <t> 태그가 있을 수 있으므로 합침 (서식 등)
-        const tNodes = siNodes[i].getElementsByTagName('t');
+        const tNodes = this.getElementsByLocalName(siNodes[i], 't');
         let text = '';
         for (let j = 0; j < tNodes.length; j++) {
           text += tNodes[j].textContent || '';
@@ -86,12 +97,12 @@ export class SheetJsFileParser implements IFileParser {
         sharedStrings.push(text);
       }
       console.log('[FileParser] Raw ZIP: 공유 문자열 추출 완료', sharedStrings.length);
+    } else {
+      console.log('[FileParser] Raw ZIP: sharedStrings.xml 없음 (숫자/인라인 문자열 위주일 수 있음)');
     }
 
-    // 2. 워크시트 찾기 (xl/worksheets/sheet1.xml 등)
-    const filesArray = Object.values(zip.files);
     const sheetXmlFile = filesArray.find(f => 
-      !f.dir && f.name.startsWith('xl/worksheets/') && f.name.endsWith('.xml')
+      !f.dir && f.name.toLowerCase().includes('worksheets/') && f.name.toLowerCase().endsWith('.xml')
     );
 
     if (!sheetXmlFile) {
@@ -99,42 +110,49 @@ export class SheetJsFileParser implements IFileParser {
     }
 
     const sheetXml = await sheetXmlFile.async('text');
+    console.log('[FileParser] Raw ZIP: 워크시트 XML 로드 완료. (첫 200자):', sheetXml.substring(0, 200));
+
     const doc = new DOMParser().parseFromString(sheetXml, 'application/xml');
     
-    // 3. 행(row) 파싱
+    // 네임스페이스를 무시하고 <row> 태그 모두 찾기
+    const rowNodes = this.getElementsByLocalName(doc, 'row');
+    console.log('[FileParser] Raw ZIP: 찾은 <row> 개수:', rowNodes.length);
+
+    if (rowNodes.length === 0) {
+      // 정규식 폴백 (DOMParser가 완전히 실패했을 경우 대비)
+      return this.parseXmlWithRegex(sheetXml, sharedStrings);
+    }
+
     const rawRows: string[][] = [];
     let maxColumns = 0;
 
-    const rowNodes = doc.getElementsByTagName('row');
     for (let i = 0; i < rowNodes.length; i++) {
       const rowNode = rowNodes[i];
       const rowIndexAttr = rowNode.getAttribute('r');
       const rowIndex = rowIndexAttr ? parseInt(rowIndexAttr, 10) - 1 : rawRows.length;
 
-      // 누락된 빈 행 채우기
       while (rawRows.length <= rowIndex) {
         rawRows.push([]);
       }
       const currentRow = rawRows[rowIndex];
 
-      const cNodes = rowNode.getElementsByTagName('c');
+      const cNodes = this.getElementsByLocalName(rowNode, 'c');
       for (let j = 0; j < cNodes.length; j++) {
         const cNode = cNodes[j];
-        const rAttr = cNode.getAttribute('r'); // "A1", "B1" 등
+        const rAttr = cNode.getAttribute('r'); 
         
         let colIndex = currentRow.length;
         if (rAttr) {
           colIndex = this.colLettersToIndex(rAttr.replace(/[0-9]/g, ''));
         }
 
-        // 누락된 빈 셀 채우기
         while (currentRow.length <= colIndex) {
           currentRow.push('');
         }
 
-        const tAttr = cNode.getAttribute('t'); // "s"면 sharedString 인덱스
-        const vNode = cNode.getElementsByTagName('v')[0];
-        const isNode = cNode.getElementsByTagName('is')[0];
+        const tAttr = cNode.getAttribute('t');
+        const vNode = this.getElementsByLocalName(cNode, 'v')[0];
+        const isNode = this.getElementsByLocalName(cNode, 'is')[0];
 
         let val = '';
         if (vNode) {
@@ -142,11 +160,10 @@ export class SheetJsFileParser implements IFileParser {
           if (tAttr === 's') {
             val = sharedStrings[parseInt(v, 10)] ?? v;
           } else {
-            val = v; // 숫자 등
+            val = v; 
           }
         } else if (isNode) {
-          // 인라인 스트링
-          const tNodes = isNode.getElementsByTagName('t');
+          const tNodes = this.getElementsByLocalName(isNode, 't');
           for (let k = 0; k < tNodes.length; k++) {
             val += tNodes[k].textContent || '';
           }
@@ -164,7 +181,6 @@ export class SheetJsFileParser implements IFileParser {
       return null;
     }
 
-    // 모든 행을 같은 열 개수로 정규화
     const normalizedRows = rawRows.map(row => {
       if (row.length < maxColumns) {
         return [...row, ...Array<string>(maxColumns - row.length).fill('')];
@@ -176,17 +192,74 @@ export class SheetJsFileParser implements IFileParser {
     return { rawRows: normalizedRows, columnCount: maxColumns };
   }
 
-  /** "A" -> 0, "Z" -> 25, "AA" -> 26 */
+  /**
+   * DOMParser조차 실패하는 극단적인 경우를 위한 정규식 파서
+   */
+  private parseXmlWithRegex(sheetXml: string, sharedStrings: string[]): ParsedSheet | null {
+    console.log('[FileParser] DOMParser가 <row>를 찾지 못함. 정규식(Regex) 파서를 시도합니다...');
+    
+    const rawRows: string[][] = [];
+    let maxColumns = 0;
+
+    // 대소문자 구분 없이 <row> 태그 추출
+    const rowRegex = /<[a-z0-9:]*row[^>]*>([\s\S]*?)<\/[a-z0-9:]*row>/gi;
+    let rowMatch;
+    
+    while ((rowMatch = rowRegex.exec(sheetXml)) !== null) {
+      const rowInnerHtml = rowMatch[1];
+      const currentRow: string[] = [];
+      
+      // 일단 단순하게 모든 v 값을 순서대로 추출 (r 속성 미지원 한계)
+      // t="s" 인지 확인하는 정규식 추출이 복잡하므로 간단화된 로직 적용
+      const cellRegex = /<[a-z0-9:]*c([^>]*)>([\s\S]*?)<\/[a-z0-9:]*c>/gi;
+      let cellMatch;
+      
+      while ((cellMatch = cellRegex.exec(rowInnerHtml)) !== null) {
+        const cAttrs = cellMatch[1];
+        const cInner = cellMatch[2];
+        
+        const isString = cAttrs.includes('t="s"');
+        const vMatch = /<[a-z0-9:]*v>([^<]*)<\/[a-z0-9:]*v>/i.exec(cInner);
+        
+        let val = '';
+        if (vMatch) {
+          const v = vMatch[1];
+          if (isString) {
+            val = sharedStrings[parseInt(v, 10)] ?? v;
+          } else {
+            val = v;
+          }
+        }
+        currentRow.push(val);
+      }
+      
+      rawRows.push(currentRow);
+      if (currentRow.length > maxColumns) {
+        maxColumns = currentRow.length;
+      }
+    }
+    
+    if (rawRows.length === 0) return null;
+    
+    const normalizedRows = rawRows.map(row => {
+      if (row.length < maxColumns) {
+        return [...row, ...Array<string>(maxColumns - row.length).fill('')];
+      }
+      return row;
+    });
+
+    console.log('[FileParser] Regex 파싱 완료:', { rowCount: normalizedRows.length, columnCount: maxColumns });
+    return { rawRows: normalizedRows, columnCount: maxColumns };
+  }
+
   private colLettersToIndex(letters: string): number {
     let sum = 0;
     for (let i = 0; i < letters.length; i++) {
       sum *= 26;
-      sum += (letters.charCodeAt(i) - 64);
+      sum += (letters.toUpperCase().charCodeAt(i) - 64);
     }
     return sum - 1;
   }
-
-  // --- 기존 유틸리티 메서드들 유지 ---
 
   private extractSheet(workbook: XLSX.WorkBook): XLSX.WorkSheet {
     const sheetNames = workbook.SheetNames;
