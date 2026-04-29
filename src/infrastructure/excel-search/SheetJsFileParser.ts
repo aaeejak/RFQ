@@ -1,4 +1,4 @@
-import readXlsxFile from 'read-excel-file';
+import readXlsxFile from 'read-excel-file/browser';
 import type { IFileParser, ParsedSheet } from '../../application/excel-search/IFileParser';
 
 /**
@@ -33,9 +33,9 @@ export class SheetJsFileParser implements IFileParser {
   private async parseXlsx(file: File): Promise<ParsedSheet> {
     console.log('[FileParser] read-excel-file 파싱 시도...');
 
-    let rawRows: any[][];
+    let rawRows: any[];
     try {
-      rawRows = await readXlsxFile(file);
+      rawRows = (await readXlsxFile(file)) as any[];
     } catch (err) {
       console.error('[FileParser] readXlsxFile 실패:', err);
       throw new Error(
@@ -49,7 +49,7 @@ export class SheetJsFileParser implements IFileParser {
 
     // 각 셀의 값을 문자열로 변환 (null/undefined는 빈 문자열로)
     const stringRows = rawRows.map((row) =>
-      row.map((cell) => {
+      row.map((cell: unknown) => {
         if (cell === null || cell === undefined) return '';
         if (cell instanceof Date) return cell.toLocaleDateString('ko-KR');
         return String(cell);
