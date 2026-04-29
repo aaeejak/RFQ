@@ -63,10 +63,18 @@ export default function ColumnSelector({
     return Array.from({ length: columnCount }, (_, i) => `열 ${generateColumnLabel(i)}`);
   }, [rawRows, columnCount, useFirstRowAsHeader]);
 
-  // 미리보기용 데이터 행
+  // 미리보기용 데이터 행 (상단 10행 + 하단 5행)
   const previewRows = useMemo(() => {
     const dataRows = useFirstRowAsHeader ? rawRows.slice(1) : rawRows;
-    return dataRows.slice(0, 5);
+    if (dataRows.length <= 15) {
+      return dataRows;
+    }
+    // 중간 생략 마커를 위해 특수한 배열 하나를 삽입합니다.
+    return [
+      ...dataRows.slice(0, 10),
+      ['...ELLIPSIS...'],
+      ...dataRows.slice(dataRows.length - 5)
+    ];
   }, [rawRows, useFirstRowAsHeader]);
 
   const handleMpnChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
@@ -141,10 +149,10 @@ export default function ColumnSelector({
       {/* 미리보기 테이블 */}
       <div className="column-selector__preview">
         <p className="column-selector__preview-title">
-          미리보기 (데이터 상위 {previewRows.length}행)
+          미리보기 (상단 및 하단 데이터)
           <span className="column-selector__total"> · 전체 {useFirstRowAsHeader ? rawRows.length - 1 : rawRows.length}행</span>
         </p>
-        <div className="table-scroll">
+        <div className="table-scroll" style={{ maxHeight: '400px' }}>
           <table className="preview-table">
             <thead>
               <tr>
@@ -167,24 +175,38 @@ export default function ColumnSelector({
               </tr>
             </thead>
             <tbody>
-              {previewRows.map((row, ri) => (
-                <tr key={ri}>
-                  {row.map((cell, ci) => (
-                    <td
-                      key={ci}
-                      className={
-                        ci === mapping.mpnColumnIndex
-                          ? 'col-highlight col-highlight--mpn'
-                          : ci === mapping.quantityColumnIndex
-                            ? 'col-highlight col-highlight--qty'
-                            : ''
-                      }
-                    >
-                      {cell || <span className="cell-empty">—</span>}
-                    </td>
-                  ))}
-                </tr>
-              ))}
+              {previewRows.map((row, ri) => {
+                if (row.length === 1 && row[0] === '...ELLIPSIS...') {
+                  return (
+                    <tr key={`ellipsis-${ri}`} className="preview-table__ellipsis">
+                      <td 
+                        colSpan={columnCount} 
+                        style={{ textAlign: 'center', color: '#64748b', background: 'rgba(15,23,42,0.3)', padding: '1rem', letterSpacing: '0.2em' }}
+                      >
+                        ... 중간 데이터 생략 ...
+                      </td>
+                    </tr>
+                  );
+                }
+                return (
+                  <tr key={ri}>
+                    {row.map((cell, ci) => (
+                      <td
+                        key={ci}
+                        className={
+                          ci === mapping.mpnColumnIndex
+                            ? 'col-highlight col-highlight--mpn'
+                            : ci === mapping.quantityColumnIndex
+                              ? 'col-highlight col-highlight--qty'
+                              : ''
+                        }
+                      >
+                        {cell || <span className="cell-empty">—</span>}
+                      </td>
+                    ))}
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
