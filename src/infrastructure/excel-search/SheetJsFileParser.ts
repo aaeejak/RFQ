@@ -5,7 +5,7 @@ import type { IFileParser, ParsedSheet } from '../../application/excel-search/IF
  * SheetJS(xlsx) 라이브러리를 사용한 파일 파서 구현체.
  * .xlsx, .xls, .csv 파일을 지원합니다.
  *
- * 브라우저 호환성을 위해 FileReader.readAsBinaryString()을 사용합니다.
+ * 다양한 파일 읽기 방식을 시도하여 호환성을 최대화합니다.
  */
 export class SheetJsFileParser implements IFileParser {
   async parse(file: File): Promise<ParsedSheet> {
@@ -19,42 +19,137 @@ export class SheetJsFileParser implements IFileParser {
       throw new Error('파일이 비어있습니다 (0 bytes).');
     }
 
-    // FileReader로 바이너리 문자열 읽기 (브라우저 호환성 최적)
-    const binaryStr = await this.readFileAsBinaryString(file);
-    console.log('[SheetJsFileParser] 바이너리 문자열 길이:', binaryStr.length);
+    // 1차 시도: readAsArrayBuffer → Uint8Array
+    let workbook = await this.tryParseAsArrayBuffer(file);
 
-    let workbook: XLSX.WorkBook;
+    // 2차 시도: readAsBinaryString (폴백)
+    if (!workbook || !this.hasValidSheet(workbook)) {
+      console.log('[SheetJsFileParser] ArrayBuffer 방식 실패, BinaryString 시도...');
+      workbook = await this.tryParseAsBinaryString(file);
+    }
+
+    if (!workbook) {
+      throw new Error('파일을 파싱할 수 없습니다.');
+    }
+
+    // 시트 데이터 추출
+    const sheet = this.extractSheet(workbook);
+    return this.sheetToParsedSheet(sheet);
+  }
+
+  private async tryParseAsArrayBuffer(file: File): Promise<XLSX.WorkBook | null> {
     try {
-      workbook = XLSX.read(binaryStr, { type: 'binary' });
-      console.log('[SheetJsFileParser] 시트 목록:', workbook.SheetNames);
+      const buffer = await file.arrayBuffer();
+      const data = new Uint8Array(buffer);
+      console.log('[SheetJsFileParser] ArrayBuffer 크기:', data.length);
+      const wb = XLSX.read(data, { type: 'array', codepage: 949 });
+      console.log('[SheetJsFileParser] [ArrayBuffer] 시트:', wb.SheetNames);
+      return wb;
     } catch (err) {
-      console.error('[SheetJsFileParser] XLSX.read 실패:', err);
-      throw new Error(`파일 형식을 읽을 수 없습니다: ${err instanceof Error ? err.message : String(err)}`);
+      console.warn('[SheetJsFileParser] ArrayBuffer 파싱 실패:', err);
+      return null;
     }
+  }
 
-    if (!workbook.SheetNames || workbook.SheetNames.length === 0) {
-      throw new Error('파일에 시트가 없습니다.');
+  private async tryParseAsBinaryString(file: File): Promise<XLSX.WorkBook | null> {
+    try {
+      const binaryStr = await this.readFileAsBinaryString(file);
+      const wb = XLSX.read(binaryStr, { type: 'binary', codepage: 949 });
+      console.log('[SheetJsFileParser] [BinaryString] 시트:', wb.SheetNames);
+      return wb;
+    } catch (err) {
+      console.warn('[SheetJsFileParser] BinaryString 파싱 실패:', err);
+      return null;
     }
+  }
 
-    const sheetName = workbook.SheetNames[0];
-    const sheet = workbook.Sheets[sheetName];
+  /**
+   * workbook에서 첫 번째 유효한 시트를 추출합니다.
+   * SheetNames[0]으로 접근이 안 되면 Object.entries로 직접 탐색합니다.
+   */
+  private extractSheet(workbook: XLSX.WorkBook): XLSX.WorkSheet {
+    const sheetNames = workbook.SheetNames;
 
-    console.log('[SheetJsFileParser] 시트 접근:', {
-      sheetName,
-      sheetExists: !!sheet,
-      sheetsKeys: Object.keys(workbook.Sheets || {}),
+    // 디버깅 상세 로그
+    const sheetsObj = workbook.Sheets;
+    const sheetsKeys = sheetsObj ? Object.keys(sheetsObj) : [];
+    console.log('[SheetJsFileParser] extractSheet 디버그:', {
+      sheetNames,
+      sheetsKeys,
+      sheetsType: typeof sheetsObj,
+      sheetsIsNull: sheetsObj === null,
+      sheetsIsUndefined: sheetsObj === undefined,
     });
 
-    if (!sheet) {
-      // 폴백: Sheets 객체의 첫 번째 값을 직접 사용
-      const firstSheet = Object.values(workbook.Sheets || {})[0];
-      if (!firstSheet) {
-        throw new Error('시트 데이터를 읽을 수 없습니다.');
-      }
-      return this.sheetToParsedSheet(firstSheet);
+    if (!sheetsObj) {
+      throw new Error('워크북에 Sheets 객체가 없습니다.');
     }
 
-    return this.sheetToParsedSheet(sheet);
+    // 방법 1: SheetNames[0]으로 직접 접근
+    if (sheetNames.length > 0) {
+      const name = sheetNames[0];
+      const sheet = sheetsObj[name];
+      if (sheet && typeof sheet === 'object') {
+        console.log('[SheetJsFileParser] 방법 1 성공: SheetNames[0] =', name);
+        return sheet;
+      }
+
+      // 방법 2: 키 이름이 미묘하게 다를 수 있으므로 (인코딩 이슈) 키를 순회
+      for (const key of sheetsKeys) {
+        if (key === name || key.trim() === name.trim()) {
+          const s = sheetsObj[key];
+          if (s && typeof s === 'object') {
+            console.log('[SheetJsFileParser] 방법 2 성공: 키 매칭 =', key);
+            return s;
+          }
+        }
+      }
+    }
+
+    // 방법 3: 키 순회로 첫 번째 유효한 시트 반환
+    for (const key of sheetsKeys) {
+      const s = sheetsObj[key];
+      if (s && typeof s === 'object' && Object.keys(s).length > 0) {
+        console.log('[SheetJsFileParser] 방법 3 성공: 첫 번째 유효 시트 =', key);
+        return s;
+      }
+    }
+
+    // 방법 4: Object.values 사용
+    const allSheets = Object.values(sheetsObj);
+    console.log('[SheetJsFileParser] 방법 4 시도: values 개수 =', allSheets.length);
+    for (const s of allSheets) {
+      if (s && typeof s === 'object') {
+        console.log('[SheetJsFileParser] 방법 4 성공');
+        return s as XLSX.WorkSheet;
+      }
+    }
+
+    // 방법 5: for...in으로 프로토타입 체인 포함 탐색
+    for (const key in sheetsObj) {
+      const s = sheetsObj[key];
+      if (s && typeof s === 'object') {
+        console.log('[SheetJsFileParser] 방법 5 성공: for..in 키 =', key);
+        return s;
+      }
+    }
+
+    throw new Error(
+      `시트 데이터에 접근할 수 없습니다. (SheetNames: [${sheetNames.join(', ')}], Keys: [${sheetsKeys.join(', ')}])`
+    );
+  }
+
+  private hasValidSheet(workbook: XLSX.WorkBook): boolean {
+    if (!workbook.SheetNames || workbook.SheetNames.length === 0) return false;
+    const sheets = workbook.Sheets;
+    if (!sheets) return false;
+
+    // 어떤 방식으로든 시트 데이터에 접근 가능한지 확인
+    const name = workbook.SheetNames[0];
+    if (sheets[name]) return true;
+    if (Object.keys(sheets).length > 0) return true;
+
+    return false;
   }
 
   private sheetToParsedSheet(sheet: XLSX.WorkSheet): ParsedSheet {
@@ -78,15 +173,12 @@ export class SheetJsFileParser implements IFileParser {
       throw new Error('파일에 데이터가 없습니다.');
     }
 
-    // 모든 행을 문자열 2D 배열로 변환
     const rawRows = rawData.map((row) =>
       (Array.isArray(row) ? row : [row]).map((cell) => String(cell ?? ''))
     );
 
-    // 가장 긴 행을 기준으로 열 수 결정
     const columnCount = Math.max(...rawRows.map((row) => row.length), 0);
 
-    // 모든 행을 같은 열 수로 맞추기
     const normalizedRows = rawRows.map((row) => {
       if (row.length < columnCount) {
         return [...row, ...Array<string>(columnCount - row.length).fill('')];
@@ -105,12 +197,8 @@ export class SheetJsFileParser implements IFileParser {
   private readFileAsBinaryString(file: File): Promise<string> {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
-      reader.onload = () => {
-        resolve(reader.result as string);
-      };
-      reader.onerror = () => {
-        reject(new Error('파일을 읽을 수 없습니다.'));
-      };
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = () => reject(new Error('파일을 읽을 수 없습니다.'));
       reader.readAsBinaryString(file);
     });
   }
