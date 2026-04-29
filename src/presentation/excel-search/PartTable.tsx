@@ -9,6 +9,7 @@ interface Props {
 export default function PartTable({ parts, onPartClick }: Props) {
   const [filter, setFilter] = useState('');
   const [clickedMpn, setClickedMpn] = useState<string | null>(null);
+  const [searchedMpns, setSearchedMpns] = useState<Set<string>>(new Set());
 
   const filteredParts = useMemo(() => {
     if (filter.trim() === '') return parts;
@@ -18,6 +19,7 @@ export default function PartTable({ parts, onPartClick }: Props) {
 
   const handleRowClick = useCallback(
     (mpn: string) => {
+      setSearchedMpns((prev) => new Set(prev).add(mpn));
       setClickedMpn(mpn);
       onPartClick(mpn);
       setTimeout(() => setClickedMpn(null), 2000);
@@ -60,7 +62,7 @@ export default function PartTable({ parts, onPartClick }: Props) {
               {filteredParts.map((part, idx) => (
                 <tr
                   key={`${part.rowIndex}-${part.mpn}`}
-                  className={`part-table__row ${clickedMpn === part.mpn ? 'part-table__row--clicked' : ''}`}
+                  className={`part-table__row ${clickedMpn === part.mpn ? 'part-table__row--clicked' : ''} ${searchedMpns.has(part.mpn) ? 'part-table__row--searched' : ''}`}
                   onClick={() => handleRowClick(part.mpn)}
                   role="button"
                   tabIndex={0}

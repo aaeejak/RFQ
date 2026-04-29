@@ -606,6 +606,20 @@
   background: rgba(56, 189, 248, 0.05);
 }
 
+.part-table__row--searched {
+  opacity: 0.6;
+  background: rgba(15, 23, 42, 0.3);
+}
+
+.part-table__row--searched .part-table__td {
+  color: #64748b;
+}
+
+.part-table__row--searched .search-icon {
+  filter: grayscale(100%);
+  opacity: 0.5;
+}
+
 /* Column highlights */
 .col-highlight--mpn {
   background: rgba(56, 189, 248, 0.08) !important;
