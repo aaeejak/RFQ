@@ -29,20 +29,45 @@ const DISTRIBUTORS: ReadonlyArray<{
     color: '#ff6600',
     buildUrl: (q) => `https://kr.element14.com/search?st=${q}`,
   },
+  {
+    name: 'Arrow',
+    color: '#f57e20',
+    buildUrl: (q) => `https://www.arrow.com/en/search?q=${q}`,
+  },
 ];
 
 /**
+ * 등록된 모든 유통사의 이름 목록을 반환합니다.
+ */
+export function getDistributorNames(): string[] {
+  return DISTRIBUTORS.map((d) => d.name);
+}
+
+/**
+ * 등록된 모든 유통사의 기본 정보(이름, 색상)를 반환합니다.
+ */
+export function getDistributorInfo(): Array<{ name: string; color: string }> {
+  return DISTRIBUTORS.map((d) => ({ name: d.name, color: d.color }));
+}
+
+/**
  * MPN(제조사 부품 번호)을 받아 각 유통사별 검색 URL 목록을 반환합니다.
+ * @param mpn 부품 번호
+ * @param enabledSites 검색할 유통사 이름 목록. 생략하면 모든 유통사를 검색합니다.
  * @throws {Error} MPN이 빈 문자열인 경우
  */
-export function generateSearchUrls(mpn: string): SearchUrl[] {
+export function generateSearchUrls(mpn: string, enabledSites?: string[]): SearchUrl[] {
   const cleanMpn = mpn.trim();
   if (cleanMpn === '') {
     throw new Error('MPN은 비어있을 수 없습니다.');
   }
   const encodedMpn = encodeURIComponent(cleanMpn);
 
-  return DISTRIBUTORS.map((d) => ({
+  const targets = enabledSites
+    ? DISTRIBUTORS.filter((d) => enabledSites.includes(d.name))
+    : DISTRIBUTORS;
+
+  return targets.map((d) => ({
     name: d.name,
     color: d.color,
     url: d.buildUrl(encodedMpn),

@@ -16,8 +16,8 @@ function App() {
   }, []);
 
   const handleSearch = useCallback(
-    (mpn: string) => {
-      searchUseCase.execute(mpn);
+    (mpn: string, enabledSites?: string[]) => {
+      searchUseCase.execute(mpn, enabledSites);
     },
     [searchUseCase]
   );
@@ -51,7 +51,7 @@ function App() {
       </main>
 
       <footer className="app-footer">
-        <p>DigiKey · Mouser · Element14 검색 결과를 새 탭으로 열어줍니다.</p>
+        <p>DigiKey · Mouser · Element14 · Arrow 검색 결과를 새 탭으로 열어줍니다.</p>
       </footer>
     </div>
   );

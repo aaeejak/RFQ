@@ -23,7 +23,27 @@ describe('SearchUseCase', () => {
 
     expect(result).toEqual({
       mpn: 'STM32',
-      openedCount: 3,
+      openedCount: 4,
+    });
+  });
+
+  it('should only open enabled sites when enabledSites is provided', () => {
+    const mockOpener = createMockOpener();
+    const useCase = new SearchUseCase(mockOpener);
+    const mpn = 'STM32';
+    const enabled = ['DigiKey', 'Arrow'];
+
+    const result = useCase.execute(mpn, enabled);
+
+    const expectedUrls = generateSearchUrls(mpn, enabled);
+    expect(mockOpener.open).toHaveBeenCalledTimes(2);
+    expectedUrls.forEach((site, index) => {
+      expect(mockOpener.open).toHaveBeenNthCalledWith(index + 1, site.url);
+    });
+
+    expect(result).toEqual({
+      mpn: 'STM32',
+      openedCount: 2,
     });
   });
 
