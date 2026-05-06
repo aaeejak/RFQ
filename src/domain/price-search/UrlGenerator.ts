@@ -32,7 +32,7 @@ const DISTRIBUTORS: ReadonlyArray<{
   {
     name: 'Arrow',
     color: '#f57e20',
-    buildUrl: (q) => `https://www.arrow.com/en/search?q=${q}`,
+    buildUrl: (q) => `https://www.arrow.com/en/search-result.html?keyword=${q}`,
   },
 ];
 

@@ -18,7 +18,7 @@ describe('UrlGenerator', () => {
     expect(urls[2].url).toBe('https://kr.element14.com/search?st=STM32F103C8T6');
 
     expect(urls[3].name).toBe('Arrow');
-    expect(urls[3].url).toBe('https://www.arrow.com/en/search?q=STM32F103C8T6');
+    expect(urls[3].url).toBe('https://www.arrow.com/en/search-result.html?keyword=STM32F103C8T6');
   });
 
   it('should include brand color for each distributor', () => {
