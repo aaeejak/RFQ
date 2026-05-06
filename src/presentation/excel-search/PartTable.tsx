@@ -4,9 +4,11 @@ import type { ExcelPart } from '../../domain/excel-search/ExcelPart';
 interface Props {
   parts: ExcelPart[];
   onPartClick: (mpn: string) => void;
+  /** 현재 활성화된 사이트 수 */
+  enabledCount?: number;
 }
 
-export default function PartTable({ parts, onPartClick }: Props) {
+export default function PartTable({ parts, onPartClick, enabledCount = 4 }: Props) {
   const [filter, setFilter] = useState('');
   const [clickedMpn, setClickedMpn] = useState<string | null>(null);
   const [searchedMpns, setSearchedMpns] = useState<Set<string>>(new Set());
@@ -19,12 +21,13 @@ export default function PartTable({ parts, onPartClick }: Props) {
 
   const handleRowClick = useCallback(
     (mpn: string) => {
+      if (enabledCount === 0) return;
       setSearchedMpns((prev) => new Set(prev).add(mpn));
       setClickedMpn(mpn);
       onPartClick(mpn);
       setTimeout(() => setClickedMpn(null), 2000);
     },
-    [onPartClick]
+    [onPartClick, enabledCount]
   );
 
   return (
@@ -85,7 +88,7 @@ export default function PartTable({ parts, onPartClick }: Props) {
 
       {clickedMpn && (
         <div className="part-table__toast" role="alert">
-          ✅ <strong>{clickedMpn}</strong> — 3개 사이트 탭이 열렸습니다!
+          ✅ <strong>{clickedMpn}</strong> — {enabledCount}개 사이트 탭이 열렸습니다!
         </div>
       )}
     </div>

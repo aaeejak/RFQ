@@ -6,11 +6,12 @@ import { SheetJsFileParser } from '../../infrastructure/excel-search/SheetJsFile
 import FileUploadZone from './FileUploadZone';
 import ColumnSelector, { useAutoDetect } from './ColumnSelector';
 import PartTable from './PartTable';
+import SiteBadges, { createInitialEnabledSites } from '../shared/SiteBadges';
 
 type Step = 'upload' | 'columns' | 'results';
 
 interface Props {
-  onSearch: (mpn: string) => void;
+  onSearch: (mpn: string, enabledSites?: string[]) => void;
 }
 
 export default function ExcelSearchPage({ onSearch }: Props) {
@@ -24,6 +25,30 @@ export default function ExcelSearchPage({ onSearch }: Props) {
   });
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+
+  // 사이트 토글 상태
+  const [enabledSites, setEnabledSites] = useState<Set<string>>(createInitialEnabledSites);
+
+  const toggleSite = useCallback((name: string) => {
+    setEnabledSites((prev) => {
+      const next = new Set(prev);
+      if (next.has(name)) {
+        next.delete(name);
+      } else {
+        next.add(name);
+      }
+      return next;
+    });
+  }, []);
+
+  const handlePartClick = useCallback(
+    (mpn: string) => {
+      if (enabledSites.size > 0) {
+        onSearch(mpn, Array.from(enabledSites));
+      }
+    },
+    [onSearch, enabledSites]
+  );
 
   const useCase = useMemo(() => {
     const parser = new SheetJsFileParser();
@@ -184,7 +209,16 @@ export default function ExcelSearchPage({ onSearch }: Props) {
       {/* Step 3: 결과 */}
       {step === 'results' && (
         <div className="results-step">
-          <PartTable parts={parts} onPartClick={onSearch} />
+          <div className="results-step__site-select">
+            <p className="results-step__site-label">검색할 사이트 선택:</p>
+            <SiteBadges enabledSites={enabledSites} onToggle={toggleSite} />
+            {enabledSites.size === 0 && (
+              <div className="warning-box warning-box--inline" role="note">
+                ⚠️ 최소 1개 이상의 사이트를 선택해 주세요.
+              </div>
+            )}
+          </div>
+          <PartTable parts={parts} onPartClick={handlePartClick} enabledCount={enabledSites.size} />
           <div className="results-step__actions">
             <button className="btn btn--secondary" onClick={handleBackToColumns}>
               ← 열 재선택

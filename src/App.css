@@ -858,6 +858,21 @@
   gap: 0.75rem;
 }
 
+.results-step__site-select {
+  margin-bottom: 1.5rem;
+  padding: 1rem 1.25rem;
+  background: rgba(15, 23, 42, 0.4);
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.results-step__site-label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #94a3b8;
+  margin: 0 0 0.75rem;
+}
+
 /* ===== Error & Loading ===== */
 
 .error-box {

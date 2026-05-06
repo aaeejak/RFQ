@@ -1,5 +1,5 @@
-import React, { useState, useMemo, useCallback } from 'react';
-import { getDistributorInfo } from '../../domain/price-search/UrlGenerator';
+import React, { useState, useCallback } from 'react';
+import SiteBadges, { createInitialEnabledSites } from '../shared/SiteBadges';
 
 interface Props {
   onSearch: (mpn: string, enabledSites?: string[]) => void;
@@ -10,11 +10,8 @@ export default function PriceSearchUI({ onSearch }: Props) {
   const [searched, setSearched] = useState(false);
   const [lastOpenedCount, setLastOpenedCount] = useState(0);
 
-  const sites = useMemo(() => getDistributorInfo(), []);
-
-  // 모든 사이트가 기본적으로 활성화
   const [enabledSites, setEnabledSites] = useState<Set<string>>(
-    () => new Set(sites.map((s) => s.name))
+    createInitialEnabledSites
   );
 
   const toggleSite = useCallback((name: string) => {
@@ -53,29 +50,7 @@ export default function PriceSearchUI({ onSearch }: Props) {
         검색할 사이트를 선택하고, 부품 번호를 입력하세요.
       </p>
 
-      {/* 토글 가능한 사이트 배지 */}
-      <div className="site-badges">
-        {sites.map((site) => {
-          const isEnabled = enabledSites.has(site.name);
-          return (
-            <button
-              key={site.name}
-              type="button"
-              className={`site-badge ${isEnabled ? 'site-badge--active' : 'site-badge--inactive'}`}
-              style={
-                isEnabled
-                  ? { borderColor: site.color, color: site.color }
-                  : undefined
-              }
-              onClick={() => toggleSite(site.name)}
-              aria-pressed={isEnabled}
-              title={isEnabled ? `${site.name} 검색 끄기` : `${site.name} 검색 켜기`}
-            >
-              {isEnabled ? '✓ ' : ''}{site.name}
-            </button>
-          );
-        })}
-      </div>
+      <SiteBadges enabledSites={enabledSites} onToggle={toggleSite} />
 
       {enabledCount === 0 && (
         <div className="warning-box warning-box--inline" role="note">
